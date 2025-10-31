@@ -1163,5 +1163,8 @@
   "metadata": {
     "lastModified": "2025-10-31T13:34:35.149510",
     "version": "1.0.0"
+  },
+  "settings": {
+    "generate_checked_only": true
   }
 }

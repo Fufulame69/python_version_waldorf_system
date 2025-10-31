@@ -66,8 +66,14 @@ def center_window(window):
 # ---- Model ----
 class Model:
     def __init__(self):
-        self.data = load_json(DATA_FILE, {"departments": [], "systems": [], "categories": []})
+        self.data = load_json(DATA_FILE, {
+            "departments": [],
+            "systems": [],
+            "categories": [],
+            "settings": {}
+        })
         self.matrix = load_json(MATRIX_FILE, {})  # position_id -> [system_ids]
+        self.settings = self.data.setdefault("settings", {})
         # index structures
         self.dept_by_id = {d["id"]: d for d in self.data.get("departments", [])}
         self.pos_by_id = {}
@@ -82,6 +88,14 @@ class Model:
         self.systems_by_cat = {}
         for s in self.systems:
             self.systems_by_cat.setdefault(s.get("categoryId", 0), []).append(s)
+
+    def get_generate_checked_only(self) -> bool:
+        return bool(self.settings.get("generate_checked_only", False))
+
+    def set_generate_checked_only(self, enabled: bool):
+        self.settings["generate_checked_only"] = bool(enabled)
+        self.data["settings"] = self.settings
+        save_json(DATA_FILE, self.data)
 
     def get_departments(self):
         return self.data.get("departments", [])
@@ -289,12 +303,22 @@ class FormGenerator:
         pos = model.pos_by_id.get(pos_id, {"name": ""})
         dept = model.dept_by_id.get(dept_id, {"name": ""})
         checked = model.systems_for_position(pos_id)
+        if model.get_generate_checked_only():
+            # Only include systems that belong to the position when requested
+            filtered_by_cat = {}
+            for cat_id, systems in model.systems_by_cat.items():
+                filtered = [s for s in systems if s["id"] in checked]
+                if filtered:
+                    filtered_by_cat[cat_id] = filtered
+            systems_by_category = filtered_by_cat
+        else:
+            systems_by_category = model.systems_by_cat
 
         # --- Access Request (solicitud) ---
         solicitud_html = read_text(TEMPL_SOLICITUD)
         solicitud_html = cls._fill_basic_fields(solicitud_html, employee_name, pos.get("name", ""), dept.get("name", ""))
         # inject dynamic systems
-        systems_block = cls._render_system_sections(model.systems_by_cat, checked, model.categories_by_id)
+        systems_block = cls._render_system_sections(systems_by_category, checked, model.categories_by_id)
         solicitud_html = solicitud_html.replace("<!-- DYNAMIC_SYSTEM_SECTIONS_PLACEHOLDER -->", systems_block)
 
         # --- IT Checklist (checklist) ---
@@ -388,7 +412,7 @@ class MatrixTab(ttk.Frame):
         left = ttk.Frame(self, padding=(8,8,4,8))
         left.grid(row=0, column=0, sticky="ns")
         ttk.Label(left, text="Puestos").pack(anchor="w")
-        self.pos_list = tk.Listbox(left, width=32, height=20, exportselection=False)
+        self.pos_list = tk.Listbox(left, width=35, height=20, exportselection=False)
         self.pos_list.pack(fill="both", expand=True)
         self.pos_list.bind("<<ListboxSelect>>", self._on_select_position)
 
@@ -446,6 +470,7 @@ class MatrixTab(ttk.Frame):
             
             # Configure grid weights for proper resizing
             categories_container.grid_columnconfigure(current_col, weight=1)
+            categories_container.grid_rowconfigure(current_row, weight=1)
             
             # Create a frame for the checkboxes within this category
             checkbox_frame = ttk.Frame(cat_frame)
@@ -1008,6 +1033,37 @@ class CategorySystemTab(ttk.Frame):
             else:
                 messagebox.showerror("Error", message)
 
+class ConfigurationsTab(ttk.Frame):
+    def __init__(self, master, model: Model, read_only: bool):
+        super().__init__(master)
+        self.model = model
+        self.read_only = read_only
+        self._build_ui()
+
+    def _build_ui(self):
+        container = ttk.Frame(self, padding=16)
+        container.pack(fill="both", expand=True)
+
+        ttk.Label(
+            container,
+            text="Adjust application features that affect generated forms."
+        ).grid(row=0, column=0, sticky="w", pady=(0, 12))
+
+        self._only_checked_var = tk.BooleanVar(value=self.model.get_generate_checked_only())
+        self._only_checked_chk = ttk.Checkbutton(
+            container,
+            text="Generate new hire form and show only checked systems",
+            variable=self._only_checked_var,
+            command=self._on_toggle_only_checked
+        )
+        self._only_checked_chk.grid(row=1, column=0, sticky="w")
+
+        if self.read_only:
+            self._only_checked_chk.state(["disabled"])
+
+    def _on_toggle_only_checked(self):
+        self.model.set_generate_checked_only(self._only_checked_var.get())
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -1047,6 +1103,9 @@ class App(tk.Tk):
 
         tab_cat_sys = CategorySystemTab(nb, self.model, read_only=read_only)
         nb.add(tab_cat_sys, text="Categories & Systems")
+
+        tab_config = ConfigurationsTab(nb, self.model, read_only=read_only)
+        nb.add(tab_config, text="Configurations")
 
         self._notebook = nb
 
