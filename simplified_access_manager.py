@@ -112,15 +112,17 @@ class Model:
         return out
 
     def systems_for_position(self, pos_id):
-        return set(self.matrix.get(str(pos_id), []))
+        # Convert string IDs to integers for consistency
+        return set(int(sys_id) for sys_id in self.matrix.get(str(pos_id), []))
 
     def set_system_for_position(self, pos_id, sys_id, enabled):
         pos_key = str(pos_id)
-        current = set(self.matrix.get(pos_key, []))
+        # Convert string IDs to integers for consistency
+        current = set(int(id) for id in self.matrix.get(pos_key, []))
         if enabled:
-            current.add(sys_id)
+            current.add(int(sys_id))
         else:
-            current.discard(sys_id)
+            current.discard(int(sys_id))
         self.matrix[pos_key] = sorted(current)
         save_json(MATRIX_FILE, self.matrix)
 
@@ -236,8 +238,10 @@ class Model:
             
             # Remove from all positions in matrix
             for pos_key in list(self.matrix.keys()):
-                if sys_id in self.matrix[pos_key]:
-                    self.matrix[pos_key].remove(sys_id)
+                # Convert to integers for comparison
+                pos_systems = [int(id) for id in self.matrix[pos_key]]
+                if int(sys_id) in pos_systems:
+                    self.matrix[pos_key].remove(str(sys_id))  # Keep as string for JSON storage
                     if not self.matrix[pos_key]:
                         del self.matrix[pos_key]
             
@@ -298,11 +302,58 @@ class FormGenerator:
             blocks.append(block)
         return "\n".join(blocks)
 
+    @staticmethod
+    def _render_departure_systems(model: Model, checked_ids):
+        # Group assigned systems by category for the departure checklist
+        systems_by_category = {}
+        for sys_id in sorted(checked_ids):
+            system = model.systems_by_id.get(sys_id)
+            if not system:
+                continue
+            cat_id = system.get("categoryId", 0)
+            systems_by_category.setdefault(cat_id, []).append(system)
+
+        if not systems_by_category:
+            return '<p class="col-span-3 italic text-gray-600">No systems assigned for this position.</p>'
+
+        blocks = []
+        for cat_id in sorted(systems_by_category.keys()):
+            systems = systems_by_category[cat_id]
+            systems.sort(key=lambda s: s.get("name", "").lower())
+
+            cat_name = model.categories_by_id.get(cat_id, {}).get("name")
+            if not cat_name:
+                cat_name = "Uncategorized" if cat_id == 0 else f"Category {cat_id}"
+            cat_name = FormGenerator._escape_html(cat_name)
+
+            labels = []
+            for system in systems:
+                labels.append(
+                    '''<label class="flex items-center gap-2">
+        <input type="checkbox" checked style="height: var(--checkbox-size); width: var(--checkbox-size);" />
+        <span>{name}</span>
+    </label>'''.format(name=FormGenerator._escape_html(system.get("name", "")))
+                )
+
+            block = '''
+<div class="space-y-2">
+  <h4 class="font-bold text-gray-900" style="font-size: var(--text-section-header);">{cat_name}</h4>
+  <div class="space-y-1" style="font-size: var(--text-checkbox);">
+    {labels}
+  </div>
+</div>'''.format(cat_name=cat_name, labels="\n    ".join(labels))
+            blocks.append(block)
+
+        return "\n".join(blocks)
+
     @classmethod
     def make_new_hire_forms(cls, model: Model, employee_name: str, dept_id: int, pos_id: int):
         pos = model.pos_by_id.get(pos_id, {"name": ""})
         dept = model.dept_by_id.get(dept_id, {"name": ""})
         checked = model.systems_for_position(pos_id)
+        # Ensure checked is a set of integers
+        if not isinstance(checked, set):
+            checked = set()
         if model.get_generate_checked_only():
             # Only include systems that belong to the position when requested
             filtered_by_cat = {}
@@ -324,17 +375,33 @@ class FormGenerator:
         # --- IT Checklist (checklist) ---
         checklist_html = read_text(TEMPL_CHECKLIST)
         checklist_html = cls._fill_basic_fields(checklist_html, employee_name, pos.get("name", ""), dept.get("name", ""))
-        # For simplicity, append a compact list of selected systems at the bottom
-        if checked:
-            rows = "".join(["<li>{}</li>".format(FormGenerator._escape_html(model.systems_by_id[sid]["name"])) for sid in sorted(checked)])
-            extra = '''
-<section style="margin-top: 0.5rem;">
-  <h3 class="bg-blue-900 text-white font-bold p-2 rounded-t-md" style="font-size: var(--text-h3);">Sistemas para este puesto</h3>
-  <div class="border border-gray-300 p-2 rounded-b-md">
-    <ul style="list-style: disc; margin-left: 1.25rem; font-size: var(--text-form-label);">{rows}</ul>
-  </div>
-</section>'''.format(rows=rows)
-            checklist_html = checklist_html.replace("</form>", extra + "\n</form>")
+        
+        # Generate dynamic system rows for the checklist
+        system_rows = []
+        for cat_id in sorted(systems_by_category.keys()):
+            systems = systems_by_category[cat_id]
+            for system in systems:
+                # Ensure system["id"] and checked are both integers for comparison
+                system_id = int(system["id"])
+                checked_status = "checked" if system_id in checked else ""
+                row = '''
+<tr>
+    <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
+        {system_name}
+    </td>
+    <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
+        <label class="flex items-center justify-center">
+            <input type="checkbox" {checked} style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
+        </label>
+    </td>
+    <td class="px-2 py-6 border-l-2 border-gray-400">
+        <!-- Anotaciones section without textbox -->
+    </td>
+</tr>'''.format(system_name=FormGenerator._escape_html(system["name"]), checked=checked_status)
+                system_rows.append(row)
+        
+        # Replace the placeholder with the dynamic system rows
+        checklist_html = checklist_html.replace("<!-- DYNAMIC_SYSTEM_ROWS_PLACEHOLDER -->", "".join(system_rows))
 
         # Paths
         folder = Path(OUT_DIR) / employee_name.strip().replace(os.sep, "_")
@@ -347,10 +414,16 @@ class FormGenerator:
         return out_solicitud.as_posix(), out_checklist.as_posix()
 
     @classmethod
-    def make_departure_form(cls, employee_name: str):
+    def make_departure_form(cls, model: Model, employee_name: str, dept_id: int, pos_id: int):
         html = read_text(TEMPL_DEPARTURE)
         # naive: try to place the name in the first text field if present
-        html = html.replace('value=""', 'value="{}"'.format(employee_name), 1)
+        html = html.replace('value=""', 'value="{}"'.format(cls._escape_html(employee_name)), 1)
+
+        # Build the network & applications section using the systems assigned to the position
+        checked = model.systems_for_position(pos_id)
+        network_html = cls._render_departure_systems(model, checked)
+        html = html.replace("<!-- Content for this section would be dynamically populated or added here -->", network_html)
+
         folder = Path(OUT_DIR) / employee_name.strip().replace(os.sep, "_")
         os.makedirs(folder, exist_ok=True)
         out_file = folder / f"{employee_name} - Separation Checklist.html"
@@ -593,8 +666,8 @@ class GenerateTab(ttk.Frame):
         req = self._require_inputs()
         if not req:
             return
-        employee, _, _ = req
-        out = FormGenerator.make_departure_form(employee)
+        employee, dept, pos = req
+        out = FormGenerator.make_departure_form(self.model, employee, dept["id"], pos["id"])
         self.status.configure(text=f"Saved:\n- {out}")
         messagebox.showinfo("Done", "Departure form created.\nOpen the HTML file in a browser and Print to PDF.")
 
