@@ -124,27 +124,27 @@
             <div class="grid grid-cols-12 gap-x-6 gap-y-2" style="padding: var(--space-2) var(--space-1); font-size: var(--text-label);">
                 <!-- Row 1: Total 12 cols -->
                 <label class="font-bold col-span-2">Employee's Name</label>
-                <input type="text" class="data-field col-span-3" value="">
+                <input type="text" class="data-field col-span-3" value="" id="departure_employee">
                 <label class="font-bold col-span-2 text-right">Term / Separation Date</label>
-                <input type="text" class="data-field col-span-2" value="">
+                <input type="text" class="data-field col-span-2" value="" id="departure_term_date">
                 <label class="font-bold col-span-1 text-right">Today's Date</label>
-                <input type="text" class="data-field col-span-2" value="">
+                <input type="text" class="data-field col-span-2" value="" id="departure_today">
                 
                 <!-- Row 2: Total 12 cols -->
                 <label class="font-bold col-span-2">IDM User.</label>
-                <input type="text" class="data-field col-span-3" value="">
+                <input type="text" class="data-field col-span-3" value="" id="departure_onq">
                 <label class="font-bold col-span-2 text-right">Hotel Name and Location #</label>
                 <input type="text" class="data-field col-span-5 font-bold" value="">
 
                 <!-- Row 3: Total 12 cols -->
                 <label class="font-bold col-span-2">Employee's Position Title</label>
-                <input type="text" class="data-field col-span-3 font-bold" value="">
+                <input type="text" class="data-field col-span-3 font-bold" value="" id="departure_position">
                 <label class="font-bold col-span-2 text-right">Manager's Name and Phone #</label>
                 <input type="text" class="data-field col-span-5" value="">
 
                 <!-- Row 4: Total 12 cols -->
                 <label class="font-bold col-span-2">Department Name and #</label>
-                <input type="text" class="data-field col-span-3" value="">
+                <input type="text" class="data-field col-span-3" value="" id="departure_department">
                 <label class="font-bold col-span-2 text-right">Manager's Signature</label>
                 <input type="text" class="data-field col-span-5" value="">
             </div>
@@ -156,8 +156,8 @@
             </div>
             <div class="grid grid-cols-2 gap-x-6" style="padding: var(--space-2) var(--space-1); font-size: var(--text-label);">
                 <!-- Note: The inputs here are inside a flex container, so 'flex-grow' is correct -->
-                <div class="flex items-center"><label class="font-bold mr-2">Date to Remove Access:</label><input type="text" class="data-field flex-grow" value=""></div>
-                <div class="flex items-center"><label class="font-bold mr-2">Date to be Processed:</label><input type="text" class="data-field flex-grow" value=""></div>
+                <div class="flex items-center"><label class="font-bold mr-2">Date to Remove Access:</label><input type="text" class="data-field flex-grow" value="" id="departure_remove_access"></div>
+                <div class="flex items-center"><label class="font-bold mr-2">Date to be Processed:</label><input type="text" class="data-field flex-grow" value="" id="departure_process_date"></div>
             </div>
         </section>
 

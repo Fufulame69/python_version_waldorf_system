@@ -14,6 +14,8 @@ Simplified Access Manager (Tkinter)
 import json
 import os
 import hashlib
+import calendar
+import re
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
@@ -254,14 +256,49 @@ class Model:
 # ---- Forms generation ----
 class FormGenerator:
     @staticmethod
-    def _fill_basic_fields(html: str, employee_name: str, position_name: str, dept_name: str) -> str:
-        # naive fill: just replace the value="" of certain inputs with defaults if present
-        # We keep it simple to avoid heavy HTML parsing.
-        html = html.replace('id="nombre"', f'id="nombre" value="{employee_name}"')
-        html = html.replace('id="posicion"', f'id="posicion" value="{position_name}"')
-        html = html.replace('id="departamento"', f'id="departamento" value="{dept_name}"')
-        today = datetime.now().strftime("%d-%b-%y")
-        html = html.replace('id="fecha_ingreso"', f'id="fecha_ingreso" value="{today}"')
+    def _set_input_value(html: str, input_id: str, value: str) -> str:
+        """Insert or update the value attribute for an <input> with the given id."""
+        if value is None:
+            return html
+        escaped = FormGenerator._escape_html(str(value))
+        pattern = re.compile(rf'(<input\b[^>]*\bid="{input_id}"[^>]*)(>)', re.IGNORECASE)
+
+        def repl(match):
+            attrs = match.group(1)
+            if "value=" in attrs:
+                attrs = re.sub(r'value="[^"]*"', f'value="{escaped}"', attrs)
+            else:
+                attrs = attrs + f' value="{escaped}"'
+            return attrs + match.group(2)
+
+        return re.sub(pattern, repl, html, count=1)
+
+    @staticmethod
+    def _fill_basic_fields(
+        html: str,
+        employee_name: str,
+        position_name: str,
+        dept_name: str,
+        *,
+        date_value=None,
+        date_label=None,
+        onq_user=None,
+        email=None,
+    ) -> str:
+        html = FormGenerator._set_input_value(html, "nombre", employee_name)
+        html = FormGenerator._set_input_value(html, "posicion", position_name)
+        html = FormGenerator._set_input_value(html, "departamento", dept_name)
+
+        if date_label:
+            html = html.replace("Fecha Ingreso", date_label, 1)
+        if not date_value:
+            date_value = datetime.now().strftime("%d-%b-%y")
+        html = FormGenerator._set_input_value(html, "fecha_ingreso", date_value)
+
+        if onq_user:
+            html = FormGenerator._set_input_value(html, "idm_login", onq_user)
+        if email:
+            html = FormGenerator._set_input_value(html, "email", email)
         return html
 
     @staticmethod
@@ -347,7 +384,18 @@ class FormGenerator:
         return "\n".join(blocks)
 
     @classmethod
-    def make_new_hire_forms(cls, model: Model, employee_name: str, dept_id: int, pos_id: int):
+    def make_new_hire_forms(
+        cls,
+        model: Model,
+        employee_name: str,
+        dept_id: int,
+        pos_id: int,
+        *,
+        onq_user="",
+        email="",
+        date_value=None,
+        date_label=None,
+    ):
         pos = model.pos_by_id.get(pos_id, {"name": ""})
         dept = model.dept_by_id.get(dept_id, {"name": ""})
         checked = model.systems_for_position(pos_id)
@@ -367,14 +415,30 @@ class FormGenerator:
 
         # --- Access Request (solicitud) ---
         solicitud_html = read_text(TEMPL_SOLICITUD)
-        solicitud_html = cls._fill_basic_fields(solicitud_html, employee_name, pos.get("name", ""), dept.get("name", ""))
+        solicitud_html = cls._fill_basic_fields(
+            solicitud_html,
+            employee_name,
+            pos.get("name", ""),
+            dept.get("name", ""),
+            date_value=date_value,
+            date_label=date_label,
+            onq_user=onq_user,
+            email=email,
+        )
         # inject dynamic systems
         systems_block = cls._render_system_sections(systems_by_category, checked, model.categories_by_id)
         solicitud_html = solicitud_html.replace("<!-- DYNAMIC_SYSTEM_SECTIONS_PLACEHOLDER -->", systems_block)
 
         # --- IT Checklist (checklist) ---
         checklist_html = read_text(TEMPL_CHECKLIST)
-        checklist_html = cls._fill_basic_fields(checklist_html, employee_name, pos.get("name", ""), dept.get("name", ""))
+        checklist_html = cls._fill_basic_fields(
+            checklist_html,
+            employee_name,
+            pos.get("name", ""),
+            dept.get("name", ""),
+            date_value=date_value,
+            date_label=date_label,
+        )
         
         # Generate dynamic system rows for the checklist
         system_rows = []
@@ -414,10 +478,31 @@ class FormGenerator:
         return out_solicitud.as_posix(), out_checklist.as_posix()
 
     @classmethod
-    def make_departure_form(cls, model: Model, employee_name: str, dept_id: int, pos_id: int):
+    def make_departure_form(
+        cls,
+        model: Model,
+        employee_name: str,
+        dept_id: int,
+        pos_id: int,
+        *,
+        onq_user="",
+        email="",
+        date_value=None,
+    ):
+        pos = model.pos_by_id.get(pos_id, {"name": ""})
+        dept = model.dept_by_id.get(dept_id, {"name": ""})
         html = read_text(TEMPL_DEPARTURE)
-        # naive: try to place the name in the first text field if present
-        html = html.replace('value=""', 'value="{}"'.format(cls._escape_html(employee_name)), 1)
+        html = cls._set_input_value(html, "departure_employee", employee_name)
+        html = cls._set_input_value(html, "departure_position", pos.get("name", ""))
+        html = cls._set_input_value(html, "departure_department", dept.get("name", ""))
+        html = cls._set_input_value(html, "departure_onq", onq_user)
+
+        if date_value:
+            html = cls._set_input_value(html, "departure_term_date", date_value)
+            html = cls._set_input_value(html, "departure_remove_access", date_value)
+            html = cls._set_input_value(html, "departure_process_date", date_value)
+        today_fmt = datetime.now().strftime("%d-%b-%y")
+        html = cls._set_input_value(html, "departure_today", today_fmt)
 
         # Build the network & applications section using the systems assigned to the position
         checked = model.systems_for_position(pos_id)
@@ -429,6 +514,93 @@ class FormGenerator:
         out_file = folder / f"{employee_name} - Separation Checklist.html"
         write_text(out_file.as_posix(), html)
         return out_file.as_posix()
+
+class DatePickerDialog(tk.Toplevel):
+    def __init__(self, master, initial_date=None, on_select=None):
+        super().__init__(master)
+        self.title("Seleccionar fecha")
+        self.transient(master)
+        self.resizable(False, False)
+        self.on_select = on_select
+        base_date = initial_date or datetime.now()
+        self.year = base_date.year
+        self.month = base_date.month
+
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        container = ttk.Frame(self, padding=8)
+        container.pack(fill="both", expand=True)
+
+        nav = ttk.Frame(container)
+        nav.pack(fill="x")
+        ttk.Button(nav, text="◀", width=3, command=self._prev_month).pack(side="left")
+        self.lbl_month = ttk.Label(nav, text="", anchor="center")
+        self.lbl_month.pack(side="left", expand=True)
+        ttk.Button(nav, text="▶", width=3, command=self._next_month).pack(side="right")
+
+        header = ttk.Frame(container)
+        header.pack(fill="x", pady=(4, 0))
+        for idx, day_name in enumerate(["Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"]):
+            ttk.Label(header, text=day_name, width=3, anchor="center").grid(row=0, column=idx, padx=1)
+
+        self.days_frame = ttk.Frame(container)
+        self.days_frame.pack(pady=(2, 0))
+
+        action_frame = ttk.Frame(container)
+        action_frame.pack(fill="x", pady=(8, 0))
+        ttk.Button(action_frame, text="Cerrar", command=self._on_close).pack(side="right")
+
+        self._draw_calendar()
+        self.after(10, lambda: center_window(self))
+
+    def _draw_calendar(self):
+        for child in self.days_frame.winfo_children():
+            child.destroy()
+        month_name = calendar.month_name[self.month]
+        self.lbl_month.configure(text=f"{month_name} {self.year}")
+        cal = calendar.Calendar(firstweekday=0)
+        for row_idx, week in enumerate(cal.monthdayscalendar(self.year, self.month)):
+            for col_idx, day in enumerate(week):
+                if day == 0:
+                    ttk.Label(self.days_frame, text="", width=3).grid(row=row_idx, column=col_idx, padx=1, pady=1)
+                    continue
+                btn = ttk.Button(
+                    self.days_frame,
+                    text=f"{day:02d}",
+                    width=3,
+                    command=lambda d=day: self._select_day(d),
+                )
+                btn.grid(row=row_idx, column=col_idx, padx=1, pady=1)
+
+    def _prev_month(self):
+        if self.month == 1:
+            self.month = 12
+            self.year -= 1
+        else:
+            self.month -= 1
+        self._draw_calendar()
+
+    def _next_month(self):
+        if self.month == 12:
+            self.month = 1
+            self.year += 1
+        else:
+            self.month += 1
+        self._draw_calendar()
+
+    def _select_day(self, day):
+        selected = datetime(self.year, self.month, day)
+        if self.on_select:
+            self.on_select(selected)
+        self._on_close()
+
+    def _on_close(self):
+        try:
+            self.grab_release()
+        except tk.TclError:
+            pass
+        self.destroy()
 
 # ---- View / Controller ----
 class LoginWindow(tk.Toplevel):
@@ -593,9 +765,21 @@ class MatrixTab(ttk.Frame):
             self.model.set_system_for_position(self._current_pos, sid, bool(var.get()))
 
 class GenerateTab(ttk.Frame):
+    DATE_INPUT_FORMATS = ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%y", "%d-%b-%Y")
+    DATE_LABELS = {
+        "ingreso": "Fecha de Ingreso",
+        "modificacion": "Fecha de Modificación",
+        "retiro": "Fecha de Retiro",
+    }
+
     def __init__(self, master, model: Model):
         super().__init__(master)
         self.model = model
+        self.onq_var = tk.StringVar()
+        self.email_var = tk.StringVar()
+        self.date_var = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
+        self.date_mode = tk.StringVar(value="ingreso")
+        self._date_picker = None
         self._build_ui()
 
     def _build_ui(self):
@@ -615,6 +799,33 @@ class GenerateTab(ttk.Frame):
         self.cmb_pos = ttk.Combobox(frm, state="readonly", width=28)
         self.cmb_pos.grid(row=0, column=5, sticky="w", padx=(4, 16))
 
+        ttk.Label(frm, text="Usuario OnQ").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.e_onq = ttk.Entry(frm, width=32, textvariable=self.onq_var)
+        self.e_onq.grid(row=1, column=1, sticky="we", padx=(4, 16), pady=(4, 0))
+
+        ttk.Label(frm, text="Correo electrónico").grid(row=1, column=2, sticky="w", pady=(4, 0))
+        self.e_email = ttk.Entry(frm, width=32, textvariable=self.email_var)
+        self.e_email.grid(row=1, column=3, columnspan=2, sticky="we", padx=(4, 16), pady=(4, 0))
+
+        ttk.Label(frm, text="Fecha").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        self.e_date = ttk.Entry(frm, width=18, textvariable=self.date_var)
+        self.e_date.grid(row=2, column=1, sticky="w", padx=(4, 4), pady=(4, 0))
+
+        self.btn_date = ttk.Button(frm, text="Seleccionar…", command=self._open_date_picker)
+        self.btn_date.grid(row=2, column=2, sticky="w", pady=(4, 0))
+
+        radio_frame = ttk.Frame(frm)
+        radio_frame.grid(row=2, column=3, columnspan=3, sticky="w", padx=(4, 0), pady=(4, 0))
+        ttk.Radiobutton(
+            radio_frame, text="Fecha de ingreso", value="ingreso", variable=self.date_mode
+        ).pack(side="left", padx=(0, 12))
+        ttk.Radiobutton(
+            radio_frame, text="Fecha de modificación", value="modificacion", variable=self.date_mode
+        ).pack(side="left", padx=(0, 12))
+        ttk.Radiobutton(
+            radio_frame, text="Fecha de retiro", value="retiro", variable=self.date_mode
+        ).pack(side="left")
+
         # populate departments
         self.dept_list = self.model.get_departments()
         self.cmb_dept["values"] = [d["name"] for d in self.dept_list]
@@ -622,14 +833,50 @@ class GenerateTab(ttk.Frame):
 
         self.btn_hire = ttk.Button(frm, text="Generate New Hire Forms", command=self._gen_hire)
         self.btn_dep = ttk.Button(frm, text="Generate Departure Form", command=self._gen_departure)
-        self.btn_hire.grid(row=1, column=1, pady=8, sticky="w")
-        self.btn_dep.grid(row=1, column=3, pady=8, sticky="w")
+        self.btn_hire.grid(row=3, column=1, pady=(8, 0), sticky="w")
+        self.btn_dep.grid(row=3, column=3, pady=(8, 0), sticky="w")
 
         # spacer
-        frm.grid_columnconfigure(6, weight=1)
+        frm.grid_columnconfigure(1, weight=1)
+        frm.grid_columnconfigure(3, weight=1)
+        frm.grid_columnconfigure(4, weight=1)
+        frm.grid_columnconfigure(5, weight=1)
 
         self.status = ttk.Label(self, text="", anchor="w", justify="left")
         self.status.pack(fill="x", padx=pad, pady=(0, pad))
+
+    def _open_date_picker(self):
+        if self._date_picker and self._date_picker.winfo_exists():
+            return
+        initial = self._parse_date_silent()
+        picker = DatePickerDialog(self, initial_date=initial, on_select=self._on_date_selected)
+        self._date_picker = picker
+        self.wait_window(picker)
+        self._date_picker = None
+
+    def _on_date_selected(self, date_obj: datetime):
+        self.date_var.set(date_obj.strftime("%Y-%m-%d"))
+
+    def _parse_date_silent(self):
+        text = self.date_var.get().strip()
+        if not text:
+            return None
+        for fmt in self.DATE_INPUT_FORMATS:
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        return None
+
+    def _require_date(self):
+        parsed = self._parse_date_silent()
+        if parsed:
+            return parsed
+        messagebox.showwarning(
+            "Fecha inválida",
+            "Introduce una fecha válida (ej. 2024-07-15) o selecciónala con el botón 'Seleccionar…'.",
+        )
+        return None
 
     def _on_dept_change(self, *_):
         name = self.cmb_dept.get()
@@ -658,7 +905,26 @@ class GenerateTab(ttk.Frame):
         if not req:
             return
         employee, dept, pos = req
-        out1, out2 = FormGenerator.make_new_hire_forms(self.model, employee, dept["id"], pos["id"])
+        if self.date_mode.get() == "retiro":
+            messagebox.showwarning("Modo incorrecto", "Selecciona una fecha de ingreso o modificación para generar estos formularios.")
+            return
+        date_obj = self._require_date()
+        if not date_obj:
+            return
+        formatted_date = date_obj.strftime("%d-%b-%y")
+        date_label = self.DATE_LABELS.get(self.date_mode.get(), self.DATE_LABELS["ingreso"])
+        onq_user = self.onq_var.get().strip()
+        email = self.email_var.get().strip()
+        out1, out2 = FormGenerator.make_new_hire_forms(
+            self.model,
+            employee,
+            dept["id"],
+            pos["id"],
+            onq_user=onq_user,
+            email=email,
+            date_value=formatted_date,
+            date_label=date_label,
+        )
         self.status.configure(text=f"Saved:\n- {out1}\n- {out2}")
         messagebox.showinfo("Done", "New hire forms created.\nYou can open the HTML files in a browser and Print to PDF.")
 
@@ -667,7 +933,24 @@ class GenerateTab(ttk.Frame):
         if not req:
             return
         employee, dept, pos = req
-        out = FormGenerator.make_departure_form(self.model, employee, dept["id"], pos["id"])
+        if self.date_mode.get() != "retiro":
+            messagebox.showwarning("Modo incorrecto", "Selecciona la opción 'Fecha de retiro' para generar el formulario de salida.")
+            return
+        date_obj = self._require_date()
+        if not date_obj:
+            return
+        formatted_date = date_obj.strftime("%d-%b-%y")
+        onq_user = self.onq_var.get().strip()
+        email = self.email_var.get().strip()
+        out = FormGenerator.make_departure_form(
+            self.model,
+            employee,
+            dept["id"],
+            pos["id"],
+            onq_user=onq_user,
+            email=email,
+            date_value=formatted_date,
+        )
         self.status.configure(text=f"Saved:\n- {out}")
         messagebox.showinfo("Done", "Departure form created.\nOpen the HTML file in a browser and Print to PDF.")
 
