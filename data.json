@@ -1131,6 +1131,156 @@
       "9": false
     }
   },
+  "roles": [
+    {
+      "id": "admin",
+      "name": "Administrator",
+      "description": "Full system access",
+      "permissions": {
+        "access_matrix": {
+          "view": true,
+          "edit": true,
+          "delete": true
+        },
+        "staff_management": {
+          "view": true,
+          "edit": true,
+          "delete": true
+        },
+        "form_generation": {
+          "view": true,
+          "edit": true,
+          "delete": true
+        },
+        "user_management": {
+          "view": true,
+          "edit": true,
+          "delete": true
+        },
+        "role_management": {
+          "view": true,
+          "edit": true,
+          "delete": true
+        },
+        "system_settings": {
+          "view": true,
+          "edit": true,
+          "delete": true
+        }
+      }
+    },
+    {
+      "id": "manager",
+      "name": "Manager",
+      "description": "Department management access",
+      "permissions": {
+        "access_matrix": {
+          "view": true,
+          "edit": true,
+          "delete": false
+        },
+        "staff_management": {
+          "view": true,
+          "edit": true,
+          "delete": false
+        },
+        "form_generation": {
+          "view": true,
+          "edit": true,
+          "delete": false
+        },
+        "user_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "role_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "system_settings": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        }
+      }
+    },
+    {
+      "id": "viewer",
+      "name": "Viewer",
+      "description": "Read-only access",
+      "permissions": {
+        "access_matrix": {
+          "view": true,
+          "edit": false,
+          "delete": false
+        },
+        "staff_management": {
+          "view": true,
+          "edit": false,
+          "delete": false
+        },
+        "form_generation": {
+          "view": true,
+          "edit": false,
+          "delete": false
+        },
+        "user_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "role_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "system_settings": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        }
+      }
+    },
+    {
+      "id": "ejemplito",
+      "name": "ejemplito",
+      "description": "ejemplito",
+      "permissions": {
+        "access_matrix": {
+          "view": true,
+          "edit": false,
+          "delete": false
+        },
+        "staff_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "form_generation": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "user_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "role_management": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        },
+        "system_settings": {
+          "view": false,
+          "edit": false,
+          "delete": false
+        }
+      }
+    }
+  ],
   "users": [
     {
       "active": true,
@@ -1141,11 +1291,12 @@
       "username": "admin"
     },
     {
-      "active": true,
       "id": 2,
-      "password": "1",
-      "role": "viewer",
-      "username": "carlos"
+      "username": "carlitos",
+      "password": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "name": "dsds",
+      "role": "ejemplito",
+      "active": true
     }
   ],
   "staffMembers": [

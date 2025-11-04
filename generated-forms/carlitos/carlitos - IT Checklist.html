@@ -113,19 +113,19 @@
                 <div class="grid grid-cols-4" style="gap: var(--space-1); font-size: var(--text-form-label); margin-bottom: var(--space-0-5);">
                     <div>
                         <label for="nombre" class="font-bold text-gray-700">NOMBRE Y APELLIDO</label>
-                        <input type="text" id="nombre" value="carlitos" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);">
+                        <input type="text" id="nombre" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);" value="carlitos">
                     </div>
                     <div>
                         <label for="posicion" class="font-bold text-gray-700">POSICION</label>
-                        <input type="text" id="posicion" value="Gerente General" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);">
+                        <input type="text" id="posicion" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);" value="Gerente General">
                     </div>
                     <div>
                         <label for="departamento" class="font-bold text-gray-700">DEPARTAMENTO</label>
-                        <input type="text" id="departamento" value="Gerencia" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);">
+                        <input type="text" id="departamento" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);" value="Gerencia">
                     </div>
                     <div>
-                        <label for="fecha_ingreso" class="font-bold text-gray-700">Fecha Ingreso</label>
-                        <input type="text" id="fecha_ingreso" value="31-Oct-25" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);">
+                        <label for="fecha_ingreso" class="font-bold text-gray-700">Fecha de Ingreso</label>
+                        <input type="text" id="fecha_ingreso" class="w-full border border-gray-400 shadow-sm bg-gray-100" style="margin-top: var(--space-0-5); border-radius: var(--radius-base); padding: var(--space-0-5);" value="03-Nov-25">
                     </div>
                 </div>
             </div>
@@ -148,167 +148,64 @@
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        <!-- System Row 1 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                Active Directory
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <label class="flex items-center justify-center">
-                                    <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                </label>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 2 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                Email (Office 365)
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <div class="flex flex-col space-y-1">
-                                    <label class="flex items-center justify-center">
-                                        <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                    </label>
-                                </div>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 3 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                SAP
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <div class="flex flex-col space-y-1">
-                                    <label class="flex items-center justify-center">
-                                        <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                    </label>
-                                </div>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 4 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                VPN
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <label class="flex items-center justify-center">
-                                    <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                </label>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 5 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                Salesforce
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <div class="flex flex-col space-y-1">
-                                    <label class="flex items-center justify-center">
-                                        <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                    </label>
-                                </div>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 6 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                Jira / Confluence
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <label class="flex items-center justify-center">
-                                    <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                </label>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 7 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                SharePoint (Sitio Dept.)
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <div class="flex flex-col space-y-1">
-                                    <label class="flex items-center justify-center">
-                                        <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                    </label>
-                                </div>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 8 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                Sistema de BI (Qlik/PowerBI)
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <label class="flex items-center justify-center">
-                                    <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                </label>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 9 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                GitHub / GitLab
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <label class="flex items-center justify-center">
-                                    <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                </label>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-                        <!-- System Row 10 -->
-                        <tr>
-                            <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
-                                Sistema de Tickets (Zendesk)
-                            </td>
-                            <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
-                                <label class="flex items-center justify-center">
-                                    <input type="checkbox" style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
-                                </label>
-                            </td>
-                            <td class="px-2 py-6 border-l-2 border-gray-400">
-                                <!-- Anotaciones section without textbox -->
-                            </td>
-                        </tr>
-
+                        
+<tr>
+    <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
+        OnQ Admin
+    </td>
+    <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
+        <label class="flex items-center justify-center">
+            <input type="checkbox" checked style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
+        </label>
+    </td>
+    <td class="px-2 py-6 border-l-2 border-gray-400">
+        <!-- Anotaciones section without textbox -->
+    </td>
+</tr>
+<tr>
+    <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
+        OnQ R&amp;M
+    </td>
+    <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
+        <label class="flex items-center justify-center">
+            <input type="checkbox" checked style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
+        </label>
+    </td>
+    <td class="px-2 py-6 border-l-2 border-gray-400">
+        <!-- Anotaciones section without textbox -->
+    </td>
+</tr>
+<tr>
+    <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
+        A/R Clerk
+    </td>
+    <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
+        <label class="flex items-center justify-center">
+            <input type="checkbox" checked style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
+        </label>
+    </td>
+    <td class="px-2 py-6 border-l-2 border-gray-400">
+        <!-- Anotaciones section without textbox -->
+    </td>
+</tr>
+<tr>
+    <td class="px-4 py-6 whitespace-nowrap font-medium text-gray-900" style="font-size: var(--text-form-label);">
+        Gerente reloj marcador
+    </td>
+    <td class="px-4 py-6 whitespace-nowrap border-l-2 border-gray-400">
+        <label class="flex items-center justify-center">
+            <input type="checkbox" checked style="height: var(--checkbox-size); width: var(--checkbox-size);" class="text-blue-600 border-gray-400 rounded">
+        </label>
+    </td>
+    <td class="px-2 py-6 border-l-2 border-gray-400">
+        <!-- Anotaciones section without textbox -->
+    </td>
+</tr>
                     </tbody>
                 </table>
             </div>
 
-        
-<section style="margin-top: 0.5rem;">
-  <h3 class="bg-blue-900 text-white font-bold p-2 rounded-t-md" style="font-size: var(--text-h3);">Sistemas para este puesto</h3>
-  <div class="border border-gray-300 p-2 rounded-b-md">
-    <ul style="list-style: disc; margin-left: 1.25rem; font-size: var(--text-form-label);"><li>OnQ Admin</li><li>OnQ R&amp;M</li><li>A/R Clerk</li></ul>
-  </div>
-</section>
-</form>
+        </form>
 
         <!-- Signature Section (Simplified) -->
         <footer class="border-t border-gray-300" style="margin-top: var(--space-1); padding-top: var(--space-1);">

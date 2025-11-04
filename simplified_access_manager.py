@@ -72,6 +72,8 @@ class Model:
             "departments": [],
             "systems": [],
             "categories": [],
+            "roles": [],
+            "users": [],
             "settings": {}
         })
         self.matrix = load_json(MATRIX_FILE, {})  # position_id -> [system_ids]
@@ -86,6 +88,10 @@ class Model:
         self.systems_by_id = {s["id"]: s for s in self.systems}
         self.categories = self.data.get("categories", [])
         self.categories_by_id = {c["id"]: c for c in self.categories}
+        self.roles = self.data.get("roles", [])
+        self.roles_by_id = {r["id"]: r for r in self.roles}
+        self.users = self.data.get("users", [])
+        self.users_by_username = {u["username"]: u for u in self.users}
         # group systems by categoryId (fallback label)
         self.systems_by_cat = {}
         for s in self.systems:
@@ -252,6 +258,179 @@ class Model:
             save_json(MATRIX_FILE, self.matrix)
             return True, "System deleted successfully"
         return False, "System not found"
+
+    # Role management methods
+    def get_roles(self):
+        return self.roles
+
+    def get_role_by_id(self, role_id):
+        return self.roles_by_id.get(role_id)
+
+    def add_role(self, role_id, name, description, permissions):
+        if role_id in self.roles_by_id:
+            return False, "Role ID already exists"
+        
+        new_role = {
+            "id": role_id,
+            "name": name,
+            "description": description,
+            "permissions": permissions
+        }
+        self.roles.append(new_role)
+        self.roles_by_id[role_id] = new_role
+        self.data["roles"] = self.roles
+        save_json(DATA_FILE, self.data)
+        return True, "Role created successfully"
+
+    def update_role(self, role_id, name=None, description=None, permissions=None):
+        if role_id not in self.roles_by_id:
+            return False, "Role not found"
+        
+        role = self.roles_by_id[role_id]
+        if name is not None:
+            role["name"] = name
+        if description is not None:
+            role["description"] = description
+        if permissions is not None:
+            role["permissions"] = permissions
+        
+        # Update in the list as well
+        for r in self.roles:
+            if r["id"] == role_id:
+                if name is not None:
+                    r["name"] = name
+                if description is not None:
+                    r["description"] = description
+                if permissions is not None:
+                    r["permissions"] = permissions
+                break
+        
+        self.data["roles"] = self.roles
+        save_json(DATA_FILE, self.data)
+        return True, "Role updated successfully"
+
+    def delete_role(self, role_id):
+        if role_id not in self.roles_by_id:
+            return False, "Role not found"
+        
+        # Check if any users are using this role
+        users_with_role = [u for u in self.users if u.get("role") == role_id]
+        if users_with_role:
+            return False, "Cannot delete role. Users are still assigned to this role."
+        
+        # Remove from dict and list
+        del self.roles_by_id[role_id]
+        self.roles = [r for r in self.roles if r["id"] != role_id]
+        self.data["roles"] = self.roles
+        save_json(DATA_FILE, self.data)
+        return True, "Role deleted successfully"
+
+    # User management methods
+    def get_users(self):
+        return self.users
+
+    def get_user_by_username(self, username):
+        return self.users_by_username.get(username)
+
+    def authenticate_user(self, username, password):
+        user = self.get_user_by_username(username)
+        if user and user.get("active", True):
+            stored_password = user.get("password", "")
+            if stored_password == sha256(password) or stored_password == password:  # Support both hashed and plain text
+                return user
+        return None
+
+    def add_user(self, username, password, name, role, active=True):
+        if username in self.users_by_username:
+            return False, "Username already exists"
+        
+        if role not in self.roles_by_id:
+            return False, "Invalid role"
+        
+        new_user = {
+            "id": max([u.get("id", 0) for u in self.users], default=0) + 1,
+            "username": username,
+            "password": sha256(password),  # Store hashed password
+            "name": name,
+            "role": role,
+            "active": active
+        }
+        self.users.append(new_user)
+        self.users_by_username[username] = new_user
+        self.data["users"] = self.users
+        save_json(DATA_FILE, self.data)
+        return True, "User created successfully"
+
+    def update_user(self, user_id, username=None, password=None, name=None, role=None, active=None):
+        user = None
+        for u in self.users:
+            if u["id"] == user_id:
+                user = u
+                break
+        
+        if not user:
+            return False, "User not found"
+        
+        old_username = user["username"]
+        
+        # Check for username conflict if changing username
+        if username and username != old_username and username in self.users_by_username:
+            return False, "Username already exists"
+        
+        # Check for valid role if changing role
+        if role and role not in self.roles_by_id:
+            return False, "Invalid role"
+        
+        # Update user data
+        if username is not None:
+            del self.users_by_username[old_username]
+            user["username"] = username
+            self.users_by_username[username] = user
+        if password is not None:
+            user["password"] = sha256(password)
+        if name is not None:
+            user["name"] = name
+        if role is not None:
+            user["role"] = role
+        if active is not None:
+            user["active"] = active
+        
+        self.data["users"] = self.users
+        save_json(DATA_FILE, self.data)
+        return True, "User updated successfully"
+
+    def delete_user(self, user_id):
+        user = None
+        for i, u in enumerate(self.users):
+            if u["id"] == user_id:
+                user = u
+                break
+        
+        if not user:
+            return False, "User not found"
+        
+        # Remove from dict and list
+        del self.users_by_username[user["username"]]
+        self.users = [u for u in self.users if u["id"] != user_id]
+        self.data["users"] = self.users
+        save_json(DATA_FILE, self.data)
+        return True, "User deleted successfully"
+
+    def check_permission(self, user, resource, action):
+        """Check if a user has permission for a specific action on a resource"""
+        if not user:
+            return False
+        
+        role_id = user.get("role")
+        role = self.get_role_by_id(role_id)
+        
+        if not role:
+            return False
+        
+        permissions = role.get("permissions", {})
+        resource_permissions = permissions.get(resource, {})
+        
+        return resource_permissions.get(action, False)
 
 # ---- Forms generation ----
 class FormGenerator:
@@ -604,15 +783,11 @@ class DatePickerDialog(tk.Toplevel):
 
 # ---- View / Controller ----
 class LoginWindow(tk.Toplevel):
-    USERS = {
-        # username: sha256(password)
-        "admin": sha256("admin"),
-        "viewer": sha256("viewer"),
-    }
-    def __init__(self, master, on_login):
+    def __init__(self, master, model, on_login):
         super().__init__(master)
         self.title(f"{APP_TITLE} - Login")
         self.resizable(False, False)
+        self.model = model
         self.on_login = on_login
 
         frm = ttk.Frame(self, padding=16)
@@ -634,19 +809,22 @@ class LoginWindow(tk.Toplevel):
         self.bind("<Return>", lambda e: self._submit())
 
     def _submit(self):
-        user = self.e_user.get().strip()
-        pw = self.e_pass.get()
-        if user in self.USERS and self.USERS[user] == sha256(pw):
+        username = self.e_user.get().strip()
+        password = self.e_pass.get()
+        
+        user = self.model.authenticate_user(username, password)
+        if user:
             self.on_login(user)
             self.destroy()
         else:
-            messagebox.showerror("Login", "Invalid username or password.\nHints: admin/admin or viewer/viewer.")
+            messagebox.showerror("Login", "Invalid username or password.")
 
 class MatrixTab(ttk.Frame):
-    def __init__(self, master, model: Model, read_only: bool):
+    def __init__(self, master, model: Model, user=None):
         super().__init__(master)
         self.model = model
-        self.read_only = read_only
+        self.user = user
+        self.read_only = not model.check_permission(user, "access_matrix", "edit")
         self._build_ui()
 
     def _build_ui(self):
@@ -691,6 +869,22 @@ class MatrixTab(ttk.Frame):
         vsb.grid(row=0, column=1, sticky="ns")
         right.grid_rowconfigure(0, weight=1)
         right.grid_columnconfigure(0, weight=1)
+        
+        # Enable mouse wheel scrolling
+        def _on_mousewheel(event):
+            # Windows: event.delta is 120 per scroll step
+            # Positive delta = scroll up, negative = scroll down
+            delta = -1 * (event.delta / 120)
+            canvas.yview_scroll(int(delta), "units")
+        
+        def _bind_to_mousewheel(event):
+            canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        
+        def _unbind_from_mousewheel(event):
+            canvas.unbind_all("<MouseWheel>")
+        
+        canvas.bind("<Enter>", _bind_to_mousewheel)
+        canvas.bind("<Leave>", _unbind_from_mousewheel)
 
         self.vars = {}  # sys_id -> tk.IntVar
         self.category_frames = {}  # Store category frames for horizontal layout
@@ -772,8 +966,10 @@ class GenerateTab(ttk.Frame):
         "retiro": "Fecha de Retiro",
     }
 
-    def __init__(self, master, model: Model):
+    def __init__(self, master, model: Model, user=None):
         super().__init__(master)
+        self.user = user
+        self.model = model
         self.model = model
         self.onq_var = tk.StringVar()
         self.email_var = tk.StringVar()
@@ -787,35 +983,45 @@ class GenerateTab(ttk.Frame):
         frm = ttk.Frame(self, padding=pad)
         frm.pack(fill="x", expand=False)
 
-        ttk.Label(frm, text="Empleado").grid(row=0, column=0, sticky="w")
-        self.e_name = ttk.Entry(frm, width=32)
-        self.e_name.grid(row=0, column=1, sticky="w", padx=(4, 16))
+        # Employee field
+        ttk.Label(frm, text="Empleado").grid(row=0, column=0, sticky="w", pady=(0, 4))
+        self.e_name = ttk.Entry(frm, width=25)
+        self.e_name.grid(row=0, column=1, sticky="w", pady=(0, 4), padx=(4, 0))
 
-        ttk.Label(frm, text="Departamento").grid(row=0, column=2, sticky="w")
-        self.cmb_dept = ttk.Combobox(frm, state="readonly", width=28)
-        self.cmb_dept.grid(row=0, column=3, sticky="w", padx=(4, 16))
+        # Department field
+        ttk.Label(frm, text="Departamento").grid(row=1, column=0, sticky="w", pady=(0, 4))
+        self.cmb_dept = ttk.Combobox(frm, state="readonly", width=23)
+        self.cmb_dept.grid(row=1, column=1, sticky="w", pady=(0, 4), padx=(4, 0))
 
-        ttk.Label(frm, text="Puesto").grid(row=0, column=4, sticky="w")
-        self.cmb_pos = ttk.Combobox(frm, state="readonly", width=28)
-        self.cmb_pos.grid(row=0, column=5, sticky="w", padx=(4, 16))
+        # Position field
+        ttk.Label(frm, text="Puesto").grid(row=2, column=0, sticky="w", pady=(0, 4))
+        self.cmb_pos = ttk.Combobox(frm, state="readonly", width=23)
+        self.cmb_pos.grid(row=2, column=1, sticky="w", pady=(0, 4), padx=(4, 0))
 
-        ttk.Label(frm, text="Usuario OnQ").grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self.e_onq = ttk.Entry(frm, width=32, textvariable=self.onq_var)
-        self.e_onq.grid(row=1, column=1, sticky="we", padx=(4, 16), pady=(4, 0))
+        # OnQ User field
+        ttk.Label(frm, text="Usuario OnQ").grid(row=3, column=0, sticky="w", pady=(0, 4))
+        self.e_onq = ttk.Entry(frm, width=25, textvariable=self.onq_var)
+        self.e_onq.grid(row=3, column=1, sticky="w", pady=(0, 4), padx=(4, 0))
 
-        ttk.Label(frm, text="Correo electrónico").grid(row=1, column=2, sticky="w", pady=(4, 0))
-        self.e_email = ttk.Entry(frm, width=32, textvariable=self.email_var)
-        self.e_email.grid(row=1, column=3, columnspan=2, sticky="we", padx=(4, 16), pady=(4, 0))
+        # Email field
+        ttk.Label(frm, text="Correo electrónico").grid(row=4, column=0, sticky="w", pady=(0, 4))
+        self.e_email = ttk.Entry(frm, width=25, textvariable=self.email_var)
+        self.e_email.grid(row=4, column=1, sticky="w", pady=(0, 4), padx=(4, 0))
 
-        ttk.Label(frm, text="Fecha").grid(row=2, column=0, sticky="w", pady=(4, 0))
-        self.e_date = ttk.Entry(frm, width=18, textvariable=self.date_var)
-        self.e_date.grid(row=2, column=1, sticky="w", padx=(4, 4), pady=(4, 0))
+        # Date field
+        ttk.Label(frm, text="Fecha").grid(row=5, column=0, sticky="w", pady=(0, 4))
+        date_frame = ttk.Frame(frm)
+        date_frame.grid(row=5, column=1, sticky="ew", pady=(0, 4), padx=(4, 0))
+        
+        self.e_date = ttk.Entry(date_frame, width=18, textvariable=self.date_var)
+        self.e_date.pack(side="left")
+        
+        self.btn_date = ttk.Button(date_frame, text="Seleccionar…", command=self._open_date_picker)
+        self.btn_date.pack(side="left", padx=(4, 0))
 
-        self.btn_date = ttk.Button(frm, text="Seleccionar…", command=self._open_date_picker)
-        self.btn_date.grid(row=2, column=2, sticky="w", pady=(4, 0))
-
+        # Date type radio buttons
         radio_frame = ttk.Frame(frm)
-        radio_frame.grid(row=2, column=3, columnspan=3, sticky="w", padx=(4, 0), pady=(4, 0))
+        radio_frame.grid(row=6, column=0, columnspan=2, sticky="w", pady=(0, 8))
         ttk.Radiobutton(
             radio_frame, text="Fecha de ingreso", value="ingreso", variable=self.date_mode
         ).pack(side="left", padx=(0, 12))
@@ -826,21 +1032,23 @@ class GenerateTab(ttk.Frame):
             radio_frame, text="Fecha de retiro", value="retiro", variable=self.date_mode
         ).pack(side="left")
 
+        # Buttons
+        button_frame = ttk.Frame(frm)
+        button_frame.grid(row=7, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        
+        self.btn_hire = ttk.Button(button_frame, text="Generate New Hire Forms", command=self._gen_hire)
+        self.btn_hire.pack(side="left", padx=(0, 8))
+        
+        self.btn_dep = ttk.Button(button_frame, text="Generate Departure Form", command=self._gen_departure)
+        self.btn_dep.pack(side="left")
+
+        # Configure grid weights
+        # Removed weight=1 to prevent textboxes from expanding
+
         # populate departments
         self.dept_list = self.model.get_departments()
         self.cmb_dept["values"] = [d["name"] for d in self.dept_list]
         self.cmb_dept.bind("<<ComboboxSelected>>", self._on_dept_change)
-
-        self.btn_hire = ttk.Button(frm, text="Generate New Hire Forms", command=self._gen_hire)
-        self.btn_dep = ttk.Button(frm, text="Generate Departure Form", command=self._gen_departure)
-        self.btn_hire.grid(row=3, column=1, pady=(8, 0), sticky="w")
-        self.btn_dep.grid(row=3, column=3, pady=(8, 0), sticky="w")
-
-        # spacer
-        frm.grid_columnconfigure(1, weight=1)
-        frm.grid_columnconfigure(3, weight=1)
-        frm.grid_columnconfigure(4, weight=1)
-        frm.grid_columnconfigure(5, weight=1)
 
         self.status = ttk.Label(self, text="", anchor="w", justify="left")
         self.status.pack(fill="x", padx=pad, pady=(0, pad))
@@ -955,10 +1163,11 @@ class GenerateTab(ttk.Frame):
         messagebox.showinfo("Done", "Departure form created.\nOpen the HTML file in a browser and Print to PDF.")
 
 class CategorySystemTab(ttk.Frame):
-    def __init__(self, master, model: Model, read_only: bool):
+    def __init__(self, master, model: Model, user=None):
         super().__init__(master)
         self.model = model
-        self.read_only = read_only
+        self.user = user
+        self.read_only = not model.check_permission(user, "staff_management", "edit")
         self.selected_category_id = None
         self._build_ui()
 
@@ -1390,10 +1599,11 @@ class CategorySystemTab(ttk.Frame):
                 messagebox.showerror("Error", message)
 
 class ConfigurationsTab(ttk.Frame):
-    def __init__(self, master, model: Model, read_only: bool):
+    def __init__(self, master, model: Model, user=None):
         super().__init__(master)
         self.model = model
-        self.read_only = read_only
+        self.user = user
+        self.read_only = not model.check_permission(user, "system_settings", "edit")
         self._build_ui()
 
     def _build_ui(self):
@@ -1420,6 +1630,550 @@ class ConfigurationsTab(ttk.Frame):
     def _on_toggle_only_checked(self):
         self.model.set_generate_checked_only(self._only_checked_var.get())
 
+class AccessControlTab(ttk.Frame):
+    def __init__(self, master, model: Model, user=None):
+        super().__init__(master)
+        self.model = model
+        self.user = user
+        self.read_only = not model.check_permission(user, "role_management", "edit")
+        self._build_ui()
+
+    def _build_ui(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        # Header
+        header_frame = ttk.Frame(self)
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        
+        ttk.Label(header_frame, text="Role Management", font=("TkDefaultFont", 12, "bold")).pack(side="left")
+
+        # Main content
+        main_frame = ttk.Frame(self)
+        main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(0, weight=1)
+
+        # Roles list
+        roles_frame = ttk.LabelFrame(main_frame, text="Roles")
+        roles_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        roles_frame.columnconfigure(0, weight=1)
+        roles_frame.rowconfigure(0, weight=1)
+
+        # Treeview for roles
+        columns = ("Name", "Description")
+        self.roles_tree = ttk.Treeview(roles_frame, columns=columns, show="tree headings")
+        self.roles_tree.heading("#0", text="ID")
+        self.roles_tree.heading("Name", text="Name")
+        self.roles_tree.heading("Description", text="Description")
+        
+        self.roles_tree.column("#0", width=100)
+        self.roles_tree.column("Name", width=150)
+        self.roles_tree.column("Description", width=200)
+        
+        self.roles_tree.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+        self.roles_tree.bind("<<TreeviewSelect>>", self._on_role_select)
+
+        # Scrollbar
+        roles_scroll = ttk.Scrollbar(roles_frame, orient="vertical", command=self.roles_tree.yview)
+        roles_scroll.grid(row=0, column=1, sticky="ns", pady=5)
+        self.roles_tree.configure(yscrollcommand=roles_scroll.set)
+
+        # Permissions frame
+        perm_frame = ttk.LabelFrame(main_frame, text="Permissions")
+        perm_frame.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        perm_frame.columnconfigure(0, weight=1)
+        perm_frame.rowconfigure(1, weight=1)
+
+        # Permission resources
+        resources = ["access_matrix", "staff_management", "form_generation", "user_management", "role_management", "system_settings"]
+        actions = ["view", "edit", "delete"]
+        
+        self.permission_vars = {}
+        
+        for i, resource in enumerate(resources):
+            ttk.Label(perm_frame, text=resource.replace("_", " ").title()).grid(row=i, column=0, sticky="w", padx=5, pady=2)
+            
+            for j, action in enumerate(actions):
+                var = tk.BooleanVar()
+                cb = ttk.Checkbutton(perm_frame, text=action.capitalize(), variable=var, 
+                                   state="disabled" if self.read_only else "normal")
+                cb.grid(row=i, column=j+1, padx=5, pady=2)
+                self.permission_vars[(resource, action)] = var
+
+        # Buttons
+        if not self.read_only:
+            btn_frame = ttk.Frame(perm_frame)
+            btn_frame.grid(row=len(resources), column=0, columnspan=4, pady=10)
+            
+            ttk.Button(btn_frame, text="Add Role", command=self._add_role).pack(side="left", padx=5)
+            ttk.Button(btn_frame, text="Update Role", command=self._update_role).pack(side="left", padx=5)
+            ttk.Button(btn_frame, text="Delete Role", command=self._delete_role).pack(side="left", padx=5)
+
+        self._load_roles()
+
+    def _load_roles(self):
+        # Clear existing items
+        for item in self.roles_tree.get_children():
+            self.roles_tree.delete(item)
+        
+        # Load roles
+        for role in self.model.get_roles():
+            self.roles_tree.insert("", "end", iid=role["id"], text=role["id"], 
+                                 values=(role["name"], role["description"]))
+
+    def _on_role_select(self, event):
+        selection = self.roles_tree.selection()
+        if not selection:
+            return
+        
+        role_id = selection[0]
+        role = self.model.get_role_by_id(role_id)
+        
+        if role:
+            permissions = role.get("permissions", {})
+            for (resource, action), var in self.permission_vars.items():
+                var.set(permissions.get(resource, {}).get(action, False))
+
+    def _add_role(self):
+        dialog = RoleDialog(self, "Add Role", self.model)
+        self.wait_window(dialog)
+        if dialog.result:
+            role_id, name, description, permissions = dialog.result
+            success, message = self.model.add_role(role_id, name, description, permissions)
+            if success:
+                self._load_roles()
+                messagebox.showinfo("Success", message)
+            else:
+                messagebox.showerror("Error", message)
+
+    def _update_role(self):
+        selection = self.roles_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a role to update")
+            return
+        
+        role_id = selection[0]
+        role = self.model.get_role_by_id(role_id)
+        
+        if not role:
+            return
+        
+        # Get current permissions
+        permissions = {}
+        for (resource, action), var in self.permission_vars.items():
+            if resource not in permissions:
+                permissions[resource] = {}
+            permissions[resource][action] = var.get()
+        
+        dialog = RoleDialog(self, "Update Role", self.model, role)
+        if dialog.result:
+            new_role_id, name, description, new_permissions = dialog.result
+            success, message = self.model.update_role(role_id, name, description, new_permissions)
+            if success:
+                self._load_roles()
+                messagebox.showinfo("Success", message)
+            else:
+                messagebox.showerror("Error", message)
+
+    def _delete_role(self):
+        selection = self.roles_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a role to delete")
+            return
+        
+        role_id = selection[0]
+        role = self.model.get_role_by_id(role_id)
+        
+        if not role:
+            return
+        
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete role '{role['name']}'?"):
+            success, message = self.model.delete_role(role_id)
+            if success:
+                self._load_roles()
+                messagebox.showinfo("Success", message)
+            else:
+                messagebox.showerror("Error", message)
+
+class UserManagementTab(ttk.Frame):
+    def __init__(self, master, model: Model, user=None):
+        super().__init__(master)
+        self.model = model
+        self.user = user
+        self.read_only = not model.check_permission(user, "user_management", "edit")
+        self._build_ui()
+
+    def _build_ui(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(1, weight=1)
+
+        # Header
+        header_frame = ttk.Frame(self)
+        header_frame.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 5))
+        
+        ttk.Label(header_frame, text="User Management", font=("TkDefaultFont", 12, "bold")).pack(side="left")
+
+        # Main content
+        main_frame = ttk.Frame(self)
+        main_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(0, weight=1)
+
+        # Users list
+        users_frame = ttk.LabelFrame(main_frame, text="Users")
+        users_frame.grid(row=0, column=0, sticky="nsew")
+        users_frame.columnconfigure(0, weight=1)
+        users_frame.rowconfigure(0, weight=1)
+
+        # Treeview for users
+        columns = ("Username", "Name", "Role", "Active")
+        self.users_tree = ttk.Treeview(users_frame, columns=columns, show="tree headings")
+        self.users_tree.heading("#0", text="ID")
+        self.users_tree.heading("Username", text="Username")
+        self.users_tree.heading("Name", text="Name")
+        self.users_tree.heading("Role", text="Role")
+        self.users_tree.heading("Active", text="Active")
+        
+        self.users_tree.column("#0", width=50)
+        self.users_tree.column("Username", width=120)
+        self.users_tree.column("Name", width=150)
+        self.users_tree.column("Role", width=100)
+        self.users_tree.column("Active", width=60)
+        
+        self.users_tree.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+        # Scrollbar
+        users_scroll = ttk.Scrollbar(users_frame, orient="vertical", command=self.users_tree.yview)
+        users_scroll.grid(row=0, column=1, sticky="ns", pady=5)
+        self.users_tree.configure(yscrollcommand=users_scroll.set)
+
+        # Buttons
+        if not self.read_only:
+            btn_frame = ttk.Frame(self)
+            btn_frame.grid(row=2, column=0, pady=10)
+            
+            ttk.Button(btn_frame, text="Add User", command=self._add_user).pack(side="left", padx=5)
+            ttk.Button(btn_frame, text="Edit User", command=self._edit_user).pack(side="left", padx=5)
+            ttk.Button(btn_frame, text="Change Password", command=self._change_password).pack(side="left", padx=5)
+            ttk.Button(btn_frame, text="Delete User", command=self._delete_user).pack(side="left", padx=5)
+
+        self._load_users()
+
+    def _load_users(self):
+        # Clear existing items
+        for item in self.users_tree.get_children():
+            self.users_tree.delete(item)
+        
+        # Load users
+        for user in self.model.get_users():
+            self.users_tree.insert("", "end", iid=user["id"], text=user["id"], 
+                                 values=(user["username"], user["name"], user["role"], "Yes" if user.get("active", True) else "No"))
+
+    def _add_user(self):
+        dialog = UserDialog(self, "Add User", self.model)
+        self.wait_window(dialog)
+        if dialog.result:
+            username, password, name, role, active = dialog.result
+            success, message = self.model.add_user(username, password, name, role, active)
+            if success:
+                self._load_users()
+                messagebox.showinfo("Success", message)
+            else:
+                messagebox.showerror("Error", message)
+
+    def _edit_user(self):
+        selection = self.users_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a user to edit")
+            return
+        
+        user_id = int(selection[0])
+        user = None
+        for u in self.model.get_users():
+            if u["id"] == user_id:
+                user = u
+                break
+        
+        if not user:
+            return
+        
+        dialog = UserDialog(self, "Edit User", self.model, user)
+        self.wait_window(dialog)
+        if dialog.result:
+            username, password, name, role, active = dialog.result
+            success, message = self.model.update_user(user_id, username, password, name, role, active)
+            if success:
+                self._load_users()
+                messagebox.showinfo("Success", message)
+            else:
+                messagebox.showerror("Error", message)
+
+    def _change_password(self):
+        selection = self.users_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a user to change password")
+            return
+        
+        user_id = int(selection[0])
+        user = None
+        for u in self.model.get_users():
+            if u["id"] == user_id:
+                user = u
+                break
+        
+        if not user:
+            return
+        
+        dialog = PasswordDialog(self, f"Change Password for {user['username']}", user)
+        self.wait_window(dialog)  # Wait for dialog to close
+        if dialog.result:
+            new_password = dialog.result
+            success, message = self.model.update_user(user_id, None, new_password, None, None, None)
+            if success:
+                messagebox.showinfo("Success", "Password changed successfully")
+            else:
+                messagebox.showerror("Error", message)
+
+    def _delete_user(self):
+        selection = self.users_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a user to delete")
+            return
+        
+        user_id = int(selection[0])
+        user = None
+        for u in self.model.get_users():
+            if u["id"] == user_id:
+                user = u
+                break
+        
+        if not user:
+            return
+        
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete user '{user['name']}'?"):
+            success, message = self.model.delete_user(user_id)
+            if success:
+                self._load_users()
+                messagebox.showinfo("Success", message)
+            else:
+                messagebox.showerror("Error", message)
+
+class RoleDialog(tk.Toplevel):
+    def __init__(self, master, title, model, role=None):
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.model = model
+        self.role = role
+        self.result = None
+
+        frm = ttk.Frame(self, padding=16)
+        frm.grid(row=0, column=0, sticky="nsew")
+
+        # Role ID
+        ttk.Label(frm, text="Role ID:").grid(row=0, column=0, sticky="w", pady=2)
+        self.role_id_var = tk.StringVar(value=role["id"] if role else "")
+        self.role_id_entry = ttk.Entry(frm, textvariable=self.role_id_var, width=30)
+        self.role_id_entry.grid(row=0, column=1, sticky="ew", pady=2)
+        if role:  # Disable editing ID for existing roles
+            self.role_id_entry.config(state="disabled")
+
+        # Name
+        ttk.Label(frm, text="Name:").grid(row=1, column=0, sticky="w", pady=2)
+        self.name_var = tk.StringVar(value=role["name"] if role else "")
+        ttk.Entry(frm, textvariable=self.name_var, width=30).grid(row=1, column=1, sticky="ew", pady=2)
+
+        # Description
+        ttk.Label(frm, text="Description:").grid(row=2, column=0, sticky="w", pady=2)
+        self.desc_var = tk.StringVar(value=role["description"] if role else "")
+        ttk.Entry(frm, textvariable=self.desc_var, width=30).grid(row=2, column=1, sticky="ew", pady=2)
+
+        # Permissions
+        ttk.Label(frm, text="Permissions:").grid(row=3, column=0, sticky="nw", pady=10)
+        
+        perm_frame = ttk.Frame(frm)
+        perm_frame.grid(row=3, column=1, sticky="ew", pady=10)
+        
+        resources = ["access_matrix", "staff_management", "form_generation", "user_management", "role_management", "system_settings"]
+        actions = ["view", "edit", "delete"]
+        
+        self.permission_vars = {}
+        
+        for i, resource in enumerate(resources):
+            ttk.Label(perm_frame, text=resource.replace("_", " ").title()).grid(row=i, column=0, sticky="w", padx=5, pady=2)
+            
+            for j, action in enumerate(actions):
+                var = tk.BooleanVar()
+                if role:
+                    var.set(role.get("permissions", {}).get(resource, {}).get(action, False))
+                cb = ttk.Checkbutton(perm_frame, text=action.capitalize(), variable=var)
+                cb.grid(row=i, column=j+1, padx=5, pady=2)
+                self.permission_vars[(resource, action)] = var
+
+        # Buttons
+        btn_frame = ttk.Frame(frm)
+        btn_frame.grid(row=4, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(btn_frame, text="OK", command=self._ok).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+
+        center_window(self)
+
+    def _ok(self):
+        role_id = self.role_id_var.get().strip()
+        name = self.name_var.get().strip()
+        description = self.desc_var.get().strip()
+        
+        if not role_id or not name:
+            messagebox.showerror("Error", "Role ID and Name are required")
+            return
+        
+        # Get permissions
+        permissions = {}
+        for (resource, action), var in self.permission_vars.items():
+            if resource not in permissions:
+                permissions[resource] = {}
+            permissions[resource][action] = var.get()
+        
+        self.result = (role_id, name, description, permissions)
+        self.destroy()
+
+class PasswordDialog(tk.Toplevel):
+    def __init__(self, master, title, user):
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.user = user
+        self.result = None
+
+        frm = ttk.Frame(self, padding=16)
+        frm.grid(row=0, column=0, sticky="nsew")
+
+        # Username (read-only)
+        ttk.Label(frm, text="Username:").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Label(frm, text=user["username"]).grid(row=0, column=1, sticky="w", pady=2)
+
+        # New Password
+        ttk.Label(frm, text="New Password:").grid(row=1, column=0, sticky="w", pady=2)
+        self.password_var = tk.StringVar()
+        password_entry = ttk.Entry(frm, textvariable=self.password_var, width=30, show="*")
+        password_entry.grid(row=1, column=1, sticky="ew", pady=2)
+
+        # Confirm Password
+        ttk.Label(frm, text="Confirm Password:").grid(row=2, column=0, sticky="w", pady=2)
+        self.confirm_var = tk.StringVar()
+        confirm_entry = ttk.Entry(frm, textvariable=self.confirm_var, width=30, show="*")
+        confirm_entry.grid(row=2, column=1, sticky="ew", pady=2)
+
+        # Buttons
+        btn_frame = ttk.Frame(frm)
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(btn_frame, text="Change Password", command=self._ok).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+
+        center_window(self)
+
+    def _ok(self):
+        password = self.password_var.get()
+        confirm = self.confirm_var.get()
+        
+        if not password:
+            messagebox.showerror("Error", "Password cannot be empty")
+            return
+        
+        if password != confirm:
+            messagebox.showerror("Error", "Passwords do not match")
+            return
+        
+        if len(password) < 4:
+            messagebox.showerror("Error", "Password must be at least 4 characters long")
+            return
+        
+        self.result = password
+        self.destroy()
+
+class UserDialog(tk.Toplevel):
+    def __init__(self, master, title, model, user=None):
+        super().__init__(master)
+        self.title(title)
+        self.resizable(False, False)
+        self.model = model
+        self.user = user
+        self.result = None
+
+        frm = ttk.Frame(self, padding=16)
+        frm.grid(row=0, column=0, sticky="nsew")
+
+        # Username
+        ttk.Label(frm, text="Username:").grid(row=0, column=0, sticky="w", pady=2)
+        self.username_var = tk.StringVar(value=user["username"] if user else "")
+        ttk.Entry(frm, textvariable=self.username_var, width=30).grid(row=0, column=1, sticky="ew", pady=2)
+
+        # Password
+        ttk.Label(frm, text="Password:").grid(row=1, column=0, sticky="w", pady=2)
+        self.password_var = tk.StringVar()
+        password_entry = ttk.Entry(frm, textvariable=self.password_var, width=30, show="*")
+        password_entry.grid(row=1, column=1, sticky="ew", pady=2)
+        if not user:  # Password required for new users
+            ttk.Label(frm, text="(required)", foreground="gray").grid(row=1, column=2, sticky="w", pady=2)
+        else:  # Optional for existing users
+            ttk.Label(frm, text="(leave blank to keep current)", foreground="gray").grid(row=1, column=2, sticky="w", pady=2)
+
+        # Name
+        ttk.Label(frm, text="Full Name:").grid(row=2, column=0, sticky="w", pady=2)
+        self.name_var = tk.StringVar(value=user["name"] if user else "")
+        ttk.Entry(frm, textvariable=self.name_var, width=30).grid(row=2, column=1, sticky="ew", pady=2)
+
+        # Role
+        ttk.Label(frm, text="Role:").grid(row=3, column=0, sticky="w", pady=2)
+        self.role_var = tk.StringVar(value=user["role"] if user else "")
+        role_combo = ttk.Combobox(frm, textvariable=self.role_var, width=28, state="readonly")
+        role_combo['values'] = [role["id"] for role in self.model.get_roles()]
+        role_combo.grid(row=3, column=1, sticky="ew", pady=2)
+
+        # Active
+        ttk.Label(frm, text="Active:").grid(row=4, column=0, sticky="w", pady=2)
+        self.active_var = tk.BooleanVar(value=user.get("active", True) if user else True)
+        ttk.Checkbutton(frm, variable=self.active_var).grid(row=4, column=1, sticky="w", pady=2)
+
+        # Buttons
+        btn_frame = ttk.Frame(frm)
+        btn_frame.grid(row=5, column=0, columnspan=2, pady=10)
+        
+        ttk.Button(btn_frame, text="OK", command=self._ok).pack(side="left", padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=self.destroy).pack(side="left", padx=5)
+
+        self.bind("<Return>", lambda e: self._ok())
+        self.bind("<Escape>", lambda e: self.destroy())
+
+        center_window(self)
+
+    def _ok(self):
+        username = self.username_var.get().strip()
+        password = self.password_var.get()
+        name = self.name_var.get().strip()
+        role = self.role_var.get()
+        active = self.active_var.get()
+        
+        if not username or not name or not role:
+            messagebox.showerror("Error", "Username, Full Name, and Role are required")
+            return
+        
+        if not self.user and not password:  # Password required for new users
+            messagebox.showerror("Error", "Password is required for new users")
+            return
+        
+        self.result = (username, password if password else None, name, role, active)
+        self.destroy()
+
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
@@ -1438,30 +2192,43 @@ class App(tk.Tk):
 
     def _show_login(self):
         def on_login(user):
-            read_only = (user == "viewer")
-            self._build_main_ui(read_only)
+            self.current_user = user
+            self._build_main_ui(user)
             # Show and center the main window after successful login
             self.deiconify()
             center_window(self)
-        login = LoginWindow(self, on_login)
+        login = LoginWindow(self, self.model, on_login)
         # Make sure the login window is centered
         login.after(100, lambda: center_window(login))
 
-    def _build_main_ui(self, read_only: bool):
+    def _build_main_ui(self, user):
         nb = ttk.Notebook(self)
         nb.pack(fill="both", expand=True)
 
-        tab_matrix = MatrixTab(nb, self.model, read_only=read_only)
-        nb.add(tab_matrix, text="Access Matrix")
+        # Only add tabs the user has permission to view
+        if self.model.check_permission(user, "access_matrix", "view"):
+            tab_matrix = MatrixTab(nb, self.model, user=user)
+            nb.add(tab_matrix, text="Access Matrix")
 
-        tab_gen = GenerateTab(nb, self.model)
-        nb.add(tab_gen, text="Generate Forms")
+        if self.model.check_permission(user, "form_generation", "view"):
+            tab_gen = GenerateTab(nb, self.model, user=user)
+            nb.add(tab_gen, text="Generate Forms")
 
-        tab_cat_sys = CategorySystemTab(nb, self.model, read_only=read_only)
-        nb.add(tab_cat_sys, text="Categories & Systems")
+        if self.model.check_permission(user, "staff_management", "view"):
+            tab_cat_sys = CategorySystemTab(nb, self.model, user=user)
+            nb.add(tab_cat_sys, text="Categories & Systems")
 
-        tab_config = ConfigurationsTab(nb, self.model, read_only=read_only)
-        nb.add(tab_config, text="Configurations")
+        if self.model.check_permission(user, "system_settings", "view"):
+            tab_config = ConfigurationsTab(nb, self.model, user=user)
+            nb.add(tab_config, text="Configurations")
+
+        if self.model.check_permission(user, "user_management", "view"):
+            tab_users = UserManagementTab(nb, self.model, user=user)
+            nb.add(tab_users, text="User Management")
+
+        if self.model.check_permission(user, "role_management", "view"):
+            tab_access = AccessControlTab(nb, self.model, user=user)
+            nb.add(tab_access, text="Access Control")
 
         self._notebook = nb
 
