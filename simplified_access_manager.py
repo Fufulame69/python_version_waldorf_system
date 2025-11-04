@@ -11,13 +11,26 @@ Simplified Access Manager (Tkinter)
 - Saves generated files under ./generated-forms/<Employee Name>/
 - Minimal "login": admin (read-write) / viewer (read-only)
 """
+import calendar
+import hashlib
 import json
 import os
-import hashlib
-import calendar
 import re
+import shutil
+import subprocess
+import sys
 import tkinter as tk
-from tkinter import ttk, messagebox, filedialog
+from datetime import datetime
+from pathlib import Path
+from tkinter import messagebox, simpledialog, ttk
+from typing import Dict, List, Optional, Tuple
+
+try:
+    from playwright.sync_api import sync_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except ImportError:
+    PLAYWRIGHT_AVAILABLE = False
+    print("Warning: Playwright not available. PDF generation will fall back to browser opening.")
 from datetime import datetime
 from pathlib import Path
 
@@ -646,15 +659,38 @@ class FormGenerator:
         # Replace the placeholder with the dynamic system rows
         checklist_html = checklist_html.replace("<!-- DYNAMIC_SYSTEM_ROWS_PLACEHOLDER -->", "".join(system_rows))
 
-        # Paths
+# Paths
         folder = Path(OUT_DIR) / employee_name.strip().replace(os.sep, "_")
         os.makedirs(folder, exist_ok=True)
         out_solicitud = folder / f"{employee_name} - Solicitud de Acceso.html"
         out_checklist = folder / f"{employee_name} - IT Checklist.html"
 
+# Write HTML files first
         write_text(out_solicitud.as_posix(), solicitud_html)
         write_text(out_checklist.as_posix(), checklist_html)
-        return out_solicitud.as_posix(), out_checklist.as_posix()
+        
+        # Convert HTML files to PDF
+        pdf_solicitud = out_solicitud.with_suffix('.pdf')
+        pdf_checklist = out_checklist.with_suffix('.pdf')
+        
+        try:
+            success_solicitud = convert_html_to_pdf(out_solicitud.as_posix(), pdf_solicitud.as_posix())
+            success_checklist = convert_html_to_pdf(out_checklist.as_posix(), pdf_checklist.as_posix())
+            
+            if success_solicitud and success_checklist:
+                # Clean up HTML files after successful PDF conversion
+                out_solicitud.unlink()
+                out_checklist.unlink()
+                messagebox.showinfo("Success", "PDF files have been generated successfully!")
+                return pdf_solicitud.as_posix(), pdf_checklist.as_posix()
+            else:
+                messagebox.showwarning("Partial Success", "HTML files created but PDF conversion failed. You can print them manually.")
+                return out_solicitud.as_posix(), out_checklist.as_posix()
+            
+        except Exception as e:
+            messagebox.showerror("Error", 
+                               f"Failed to convert HTML to PDF: {str(e)}")
+            return out_solicitud.as_posix(), out_checklist.as_posix()
 
     @classmethod
     def make_departure_form(
@@ -691,8 +727,82 @@ class FormGenerator:
         folder = Path(OUT_DIR) / employee_name.strip().replace(os.sep, "_")
         os.makedirs(folder, exist_ok=True)
         out_file = folder / f"{employee_name} - Separation Checklist.html"
+        pdf_file = out_file.with_suffix('.pdf')
         write_text(out_file.as_posix(), html)
-        return out_file.as_posix()
+        
+        # Convert HTML file to PDF
+        try:
+            success = convert_html_to_pdf(out_file.as_posix(), pdf_file.as_posix())
+            
+            if success:
+                # Clean up HTML file after successful PDF conversion
+                out_file.unlink()
+                messagebox.showinfo("Success", "PDF file has been generated successfully!")
+                return pdf_file.as_posix()
+            else:
+                messagebox.showwarning("Partial Success", "HTML file created but PDF conversion failed. You can print it manually.")
+                return out_file.as_posix()
+            
+        except Exception as e:
+            messagebox.showerror("Error", 
+                               f"Failed to convert HTML to PDF: {str(e)}")
+            return out_file.as_posix()
+
+def convert_html_to_pdf(html_file_path: str, output_pdf_path: str) -> bool:
+    """
+    Convert HTML file to PDF using headless browser.
+    
+    Args:
+        html_file_path: Path to the HTML file to convert
+        output_pdf_path: Path where the PDF should be saved
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        # Fallback to opening in browser
+        try:
+            import webbrowser
+            webbrowser.open(f'file://{Path(html_file_path).absolute()}')
+            return False
+        except Exception as e:
+            print(f"Failed to open HTML file: {str(e)}")
+            return False
+    
+    try:
+        html_path = Path(html_file_path)
+        if not html_path.exists():
+            raise FileNotFoundError(f"HTML file not found: {html_file_path}")
+        
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            
+            # Load the HTML file
+            page.goto(f'file://{html_path.absolute()}')
+            
+            # Wait for page to load
+            page.wait_for_load_state('networkidle')
+            
+            # Generate PDF with print settings
+            page.pdf(
+                path=output_pdf_path,
+                format='A4',
+                print_background=True,
+                margin={
+                    'top': '1cm',
+                    'right': '1cm',
+                    'bottom': '1cm',
+                    'left': '1cm'
+                }
+            )
+            
+            browser.close()
+            return True
+         
+    except Exception as e:
+        print(f"Failed to convert HTML to PDF: {str(e)}")
+        return False
 
 class DatePickerDialog(tk.Toplevel):
     def __init__(self, master, initial_date=None, on_select=None):
@@ -1134,7 +1244,7 @@ class GenerateTab(ttk.Frame):
             date_label=date_label,
         )
         self.status.configure(text=f"Saved:\n- {out1}\n- {out2}")
-        messagebox.showinfo("Done", "New hire forms created.\nYou can open the HTML files in a browser and Print to PDF.")
+        messagebox.showinfo("Done", "New hire forms created.\nHTML files have been opened in your browser for printing to PDF.")
 
     def _gen_departure(self):
         req = self._require_inputs()
@@ -1160,7 +1270,7 @@ class GenerateTab(ttk.Frame):
             date_value=formatted_date,
         )
         self.status.configure(text=f"Saved:\n- {out}")
-        messagebox.showinfo("Done", "Departure form created.\nOpen the HTML file in a browser and Print to PDF.")
+        messagebox.showinfo("Done", "Departure form created.\nHTML file has been opened in your browser for printing to PDF.")
 
 class CategorySystemTab(ttk.Frame):
     def __init__(self, master, model: Model, user=None):
