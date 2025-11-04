@@ -1,0 +1,223 @@
+Awesome — thanks for sharing the code. You can make your PyInstaller app “install-and-go” on every Windows PC with **one tiny code change + a packaging choice**.
+
+Below I show the **minimal code patch** (safe and simple), and then two installer-ready packaging paths. Pick A (smallest) if all PCs have Edge, or C (offline) if you want to ship Chromium yourself.
+
+---
+
+# 1) Minimal code patch (prefer Edge; fallback to bundled Chromium)
+
+Drop this near the top (right after imports), so your EXE can run anywhere:
+
+```python
+# --- Playwright browser discovery defaults (add this block near the imports) ---
+# Prefer using the system Edge (no downloads). If you later ship Chromium to ProgramData,
+# this env var makes Playwright find it automatically.
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", r"C:\ProgramData\ms-playwright")
+```
+
+Patch your `BrowserPool.get_browser()` to try Edge first, then Chromium:
+
+```python
+def get_browser(self):
+    """Get or create a browser instance"""
+    if self._browser is None:
+        self._playwright = sync_playwright().start()
+        # 1) Try system Edge (zero installer size, updates via Windows Update)
+        try:
+            self._browser = self._playwright.chromium.launch(
+                channel="msedge",
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-web-security',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-logging',
+                    '--disable-permissions-api',
+                    '--disable-notifications',
+                    '--disable-default-apps',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--disable-background-networking',
+                    '--disable-sync',
+                    '--metrics-recording-only',
+                    '--no-report-upload',
+                    '--disable-domain-reliability'
+                ]
+            )
+        except Exception:
+            # 2) Fallback: use Playwright’s bundled Chromium (if you install/ship it)
+            self._browser = self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-web-security',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-logging',
+                    '--disable-permissions-api',
+                    '--disable-notifications',
+                    '--disable-default-apps',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--disable-background-networking',
+                    '--disable-sync',
+                    '--metrics-recording-only',
+                    '--no-report-upload',
+                    '--disable-domain-reliability'
+                ]
+            )
+    return self._browser
+```
+
+### Important: threads
+
+Right now `convert_multiple_html_to_pdf` does **parallel threads** that share one Playwright browser. Playwright objects aren’t thread-safe. Switch that to **sequential** or to a **single worker thread**. Easiest fix:
+
+```python
+def convert_multiple_html_to_pdf(html_files):
+    if not PLAYWRIGHT_AVAILABLE:
+        # ...your existing fallback...
+        ...
+
+    results = []
+    for html_path, pdf_path in html_files:
+        results.append(convert_html_to_pdf(html_path, pdf_path))
+    return results
+```
+
+That alone eliminates weird intermittent errors.
+
+---
+
+# 2) Packaging choices
+
+## Option A (recommended if all PCs have Edge)
+
+* **No browser to ship**. Your new `channel="msedge"` line uses the system Edge.
+* Build your EXE and you’re done.
+
+**PyInstaller command:**
+
+```bat
+pyinstaller --noconfirm --clean ^
+  --name "AccessManager" ^
+  --add-data "solicitud_template.html;." ^
+  --add-data "checklist_template.html;." ^
+  --add-data "departure_template.html;." ^
+  --collect-all playwright ^
+  your_entry_script.py
+```
+
+Notes:
+
+* `--collect-all playwright` bundles Playwright’s Python package (no big browsers).
+* Since you rely on Edge, the installer is small and works everywhere Edge exists (Windows 10/11 default).
+
+## Option C (install a shared Chromium once, offline-friendly)
+
+Ship Chromium in your installer and point all EXEs to it.
+
+**Build box (one-time to prepare payload):**
+
+```bat
+set PLAYWRIGHT_BROWSERS_PATH=C:\ms-playwright-offline
+python -m pip install -U playwright
+python -m playwright install chromium
+```
+
+Copy `C:\ms-playwright-offline` into your installer files.
+
+**Installer (Inno Setup snippet):**
+
+```pascal
+[Setup]
+AppName=Access Manager
+AppVersion=1.0.0
+DefaultDirName={pf}\YourCompany\AccessManager
+DefaultGroupName=YourCompany
+ArchitecturesInstallIn64BitMode=x64
+PrivilegesRequired=admin
+
+[Files]
+; Your PyInstaller output
+Source: "dist\AccessManager\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs
+; Pre-downloaded Playwright browsers
+Source: "build_assets\ms-playwright\*"; DestDir: "{commonappdata}\ms-playwright"; Flags: recursesubdirs createallsubdirs
+
+[Registry]
+; Make browsers discoverable for all users
+Root: HKLM; Subkey: "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"; \
+  ValueType: expandsz; ValueName: "PLAYWRIGHT_BROWSERS_PATH"; \
+  ValueData: "{commonappdata}\ms-playwright"; Flags: uninsdeletevalue
+
+[Run]
+; Ensure future processes see the env var (new shells)
+Filename: "{cmd}"; Parameters: "/C setx PLAYWRIGHT_BROWSERS_PATH ""{commonappdata}\ms-playwright"" /M"; Flags: runhidden
+
+[Icons]
+Name: "{group}\Access Manager"; Filename: "{app}\AccessManager.exe"
+Name: "{commondesktop}\Access Manager"; Filename: "{app}\AccessManager.exe"; Tasks: desktopicon
+```
+
+**PyInstaller command (same as A):**
+
+```bat
+pyinstaller --noconfirm --clean ^
+  --name "AccessManager" ^
+  --add-data "solicitud_template.html;." ^
+  --add-data "checklist_template.html;." ^
+  --add-data "departure_template.html;." ^
+  --collect-all playwright ^
+  your_entry_script.py
+```
+
+Because your code already sets:
+
+```python
+os.environ.setdefault("PLAYWRIGHT_BROWSERS_PATH", r"C:\ProgramData\ms-playwright")
+```
+
+the EXE will pick up the shared browser immediately after install.
+
+---
+
+## Which should you choose?
+
+* **All PCs are standard Windows w/ Edge** → **Option A** (smallest, simplest).
+* **You need offline installs / strict consistency** → **Option C** (installer ships Chromium once per machine).
+
+---
+
+# 3) Bonus hardening (nice-to-haves)
+
+* Show a friendly message if neither Edge nor Chromium is available:
+
+  ```python
+  try:
+      browser = browser_pool.get_browser()
+  except Exception as e:
+      messagebox.showerror("Browser not available",
+          "No compatible browser found.\n"
+          "Install Microsoft Edge or reinstall the app to include Playwright Chromium.")
+      return False
+  ```
+* Keep your current “open HTML in default browser” fallback for when `PLAYWRIGHT_AVAILABLE=False`.
+
+---
+
+If you tell me your preferred option (A or C) and your exact project paths, I can hand you a ready-to-paste **.spec** and a complete **Inno Setup script** tailored to your folders.

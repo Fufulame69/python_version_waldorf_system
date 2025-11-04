@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import tkinter as tk
 from datetime import datetime
 from pathlib import Path
@@ -31,6 +32,74 @@ try:
 except ImportError:
     PLAYWRIGHT_AVAILABLE = False
     print("Warning: Playwright not available. PDF generation will fall back to browser opening.")
+
+class BrowserPool:
+    """Pool of browser instances for efficient PDF generation"""
+    _instance = None
+    _browser = None
+    _playwright = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
+    def get_browser(self):
+        """Get or create a browser instance"""
+        if self._browser is None:
+            self._playwright = sync_playwright().start()
+            self._browser = self._playwright.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-extensions',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding',
+                    '--disable-web-security',
+                    '--disable-features=TranslateUI',
+                    '--disable-ipc-flooding-protection',
+                    '--disable-logging',
+                    '--disable-permissions-api',
+                    '--disable-notifications',
+                    '--disable-default-apps',
+                    '--mute-audio',
+                    '--no-first-run',
+                    '--no-default-browser-check',
+                    '--disable-background-networking',
+                    '--disable-sync',
+                    '--metrics-recording-only',
+                    '--no-report-upload',
+                    '--disable-domain-reliability'
+                ]
+            )
+        return self._browser
+    
+    def close_all(self):
+        """Close all browser instances"""
+        if self._browser:
+            self._browser.close()
+            self._browser = None
+        if self._playwright:
+            self._playwright.stop()
+            self._playwright = None
+
+# Global browser pool instance
+browser_pool = BrowserPool()
+
+# Simple PDF generation cache
+_pdf_cache = {}
+
+def get_file_hash(file_path: str) -> str:
+    """Generate hash of file content for caching"""
+    try:
+        with open(file_path, 'rb') as f:
+            return hashlib.md5(f.read()).hexdigest()
+    except Exception:
+        return ""
+
 from datetime import datetime
 from pathlib import Path
 
@@ -674,8 +743,13 @@ class FormGenerator:
         pdf_checklist = out_checklist.with_suffix('.pdf')
         
         try:
-            success_solicitud = convert_html_to_pdf(out_solicitud.as_posix(), pdf_solicitud.as_posix())
-            success_checklist = convert_html_to_pdf(out_checklist.as_posix(), pdf_checklist.as_posix())
+            # Convert both HTML files to PDF in parallel
+            pdf_files = [
+                (out_solicitud.as_posix(), pdf_solicitud.as_posix()),
+                (out_checklist.as_posix(), pdf_checklist.as_posix())
+            ]
+            results = convert_multiple_html_to_pdf(pdf_files)
+            success_solicitud, success_checklist = results
             
             if success_solicitud and success_checklist:
                 # Clean up HTML files after successful PDF conversion
@@ -748,9 +822,51 @@ class FormGenerator:
                                f"Failed to convert HTML to PDF: {str(e)}")
             return out_file.as_posix()
 
+def convert_multiple_html_to_pdf(html_files: List[Tuple[str, str]]) -> List[bool]:
+    """
+    Convert multiple HTML files to PDF in parallel using threading.
+    
+    Args:
+        html_files: List of tuples (html_file_path, output_pdf_path)
+    
+    Returns:
+        List of booleans indicating success for each conversion
+    """
+    if not PLAYWRIGHT_AVAILABLE:
+        # Fallback to opening in browser for all files
+        results = []
+        for html_file_path, _ in html_files:
+            try:
+                import webbrowser
+                webbrowser.open(f'file://{Path(html_file_path).absolute()}')
+                results.append(False)
+            except Exception as e:
+                print(f"Failed to open HTML file {html_file_path}: {str(e)}")
+                results.append(False)
+        return results
+    
+    results = [False] * len(html_files)
+    
+    def convert_single(index: int, html_file_path: str, output_pdf_path: str):
+        """Convert single HTML file to PDF"""
+        results[index] = convert_html_to_pdf(html_file_path, output_pdf_path)
+    
+    # Create and start threads for parallel conversion
+    threads = []
+    for i, (html_file_path, output_pdf_path) in enumerate(html_files):
+        thread = threading.Thread(target=convert_single, args=(i, html_file_path, output_pdf_path))
+        threads.append(thread)
+        thread.start()
+    
+    # Wait for all threads to complete
+    for thread in threads:
+        thread.join()
+    
+    return results
+
 def convert_html_to_pdf(html_file_path: str, output_pdf_path: str) -> bool:
     """
-    Convert HTML file to PDF using headless browser.
+    Convert HTML file to PDF using headless browser with optimized performance and caching.
     
     Args:
         html_file_path: Path to the HTML file to convert
@@ -759,6 +875,13 @@ def convert_html_to_pdf(html_file_path: str, output_pdf_path: str) -> bool:
     Returns:
         True if successful, False otherwise
     """
+    # Check cache first
+    html_hash = get_file_hash(html_file_path)
+    if html_hash and output_pdf_path in _pdf_cache.get(html_hash, {}):
+        # PDF already exists and is up to date
+        if os.path.exists(output_pdf_path):
+            return True
+    
     if not PLAYWRIGHT_AVAILABLE:
         # Fallback to opening in browser
         try:
@@ -769,40 +892,71 @@ def convert_html_to_pdf(html_file_path: str, output_pdf_path: str) -> bool:
             print(f"Failed to open HTML file: {str(e)}")
             return False
     
+    browser = None
+    page = None
+    
     try:
         html_path = Path(html_file_path)
         if not html_path.exists():
             raise FileNotFoundError(f"HTML file not found: {html_file_path}")
         
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            
-            # Load the HTML file
-            page.goto(f'file://{html_path.absolute()}')
-            
-            # Wait for page to load
-            page.wait_for_load_state('networkidle')
-            
-            # Generate PDF with print settings
-            page.pdf(
-                path=output_pdf_path,
-                format='A4',
-                print_background=True,
-                margin={
-                    'top': '1cm',
-                    'right': '1cm',
-                    'bottom': '1cm',
-                    'left': '1cm'
-                }
-            )
-            
-            browser.close()
-            return True
+        # Get browser from pool
+        browser = browser_pool.get_browser()
+        page = browser.new_page()
+        
+        # Optimize page settings for faster PDF generation
+        page.set_viewport_size({"width": 1200, "height": 800})
+        page.set_extra_http_headers({
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        })
+        
+        # Disable JavaScript and images for faster rendering (if not needed)
+        page.route('**/*.{png,jpg,jpeg,gif,svg,webp}', lambda route: route.abort())
+        page.route('**/*.js', lambda route: route.abort())
+        
+        # Load the HTML file
+        page.goto(f'file://{html_path.absolute()}', wait_until='domcontentloaded')
+        
+        # Wait for page to load with shorter timeout
+        try:
+            page.wait_for_load_state('networkidle', timeout=5000)
+        except:
+            # If networkidle times out, proceed anyway for faster generation
+            pass
+        
+        # Generate PDF with optimized settings
+        page.pdf(
+            path=output_pdf_path,
+            format='A4',
+            print_background=True,
+            margin={
+                'top': '1cm',
+                'right': '1cm',
+                'bottom': '1cm',
+                'left': '1cm'
+            },
+            prefer_css_page_size=True
+        )
+        
+        # Update cache
+        if html_hash:
+            if html_hash not in _pdf_cache:
+                _pdf_cache[html_hash] = {}
+            _pdf_cache[html_hash][output_pdf_path] = True
+        
+        return True
          
     except Exception as e:
         print(f"Failed to convert HTML to PDF: {str(e)}")
         return False
+    finally:
+        # Always close the page but keep browser alive for reuse
+        if page:
+            page.close()
 
 class DatePickerDialog(tk.Toplevel):
     def __init__(self, master, initial_date=None, on_select=None):
@@ -2349,5 +2503,9 @@ if __name__ == "__main__":
         root.withdraw()
         messagebox.showerror("Missing file", f"Could not find {DATA_FILE} in the current directory.")
     else:
-        app = App()
-        app.mainloop()
+        try:
+            app = App()
+            app.mainloop()
+        finally:
+            # Clean up browser pool on exit
+            browser_pool.close_all()

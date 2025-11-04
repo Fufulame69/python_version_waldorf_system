@@ -1,0 +1,84 @@
+/* Optimized CSS for PDF generation */
+:root {
+    /* Essential typography */
+    --text-h1: 11.1pt;
+    --text-h2: 11.15pt;
+    --text-h3: 10.45pt;
+    --text-header-subtitle: 8.75px;
+    --text-form-label: 9.45px;
+    --text-form-small: 8.05px;
+    --text-section-header: 9.45px;
+    --text-checkbox: 8.75px;
+    --text-legend: 9.35px;
+    --text-ack: 7.75px;
+    --text-obs-label: 10.45px;
+    --text-footer: 9.75px;
+    --text-footer-small: 9.05px;
+
+    /* Minimal spacing */
+    --space-0-5: 0.0875rem;
+    --space-1: 0.275rem;
+    --space-1-5: 0.4625rem;
+    --space-2: 0.55rem;
+    --space-3: 0.625rem;
+
+    /* Essential dimensions */
+    --logo-height: 5.85rem;
+    --checkbox-size: 0.525rem;
+    --signature-line-height: 0.84rem;
+    
+    /* Minimal borders */
+    --radius-md: 0.2625rem;
+    --radius-base: 0.175rem;
+}
+
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    padding: var(--space-1);
+    margin: 0;
+    line-height: 1.2;
+}
+
+.signature-line {
+    border-bottom: 1px solid #9ca3af;
+    min-height: var(--signature-line-height);
+    margin-top: var(--space-0-5);
+    padding-bottom: 1px;
+    text-align: center;
+}
+
+.checkbox-custom {
+    width: var(--checkbox-size);
+    height: var(--checkbox-size);
+    border: 1px solid #374151;
+    border-radius: var(--radius-base);
+    margin-right: var(--space-0-5);
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.checkbox-custom.checked::after {
+    content: '✓';
+    color: #000;
+    font-size: 8px;
+    display: block;
+    text-align: center;
+    line-height: var(--checkbox-size);
+}
+
+/* Print optimization */
+@media print {
+    body {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    
+    .no-print {
+        display: none !important;
+    }
+    
+    * {
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+}
